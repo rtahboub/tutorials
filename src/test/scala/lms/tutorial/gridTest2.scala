@@ -3,20 +3,17 @@ package scala.lms.tutorial
 import _root_.java.awt.geom.Point2D
 import _root_.java.awt.geom.Rectangle2D
 
-import _root_.Engine.QueryCompiler.PointList
-
 import scala.lms.common._
 
 
 
-class QueryLiveStepsTest3 extends TutorialFunSuite {
-  val under = "query_live_"
+class GridTest2 extends TutorialFunSuite {
+  val under = "grid_test_"
 
 
+  test("grid1") {
 
-  test("demo9") {
-
-    object Engine extends SimpleQueryProcessor with SQLParser {
+    object Engine { //extends SimpleQueryProcessor with SQLParser { // SQL support not needed
 
       trait QueryCompiler extends Dsl with ScannerLowerBase {
 
@@ -42,8 +39,18 @@ class QueryLiveStepsTest3 extends TutorialFunSuite {
               pos += 1
             }
             pos += 1
-            RInt(num)
+            num: Rep[Int] //RInt(num)
           }
+
+          def nextDouble(d: Rep[Char]) = {
+            println("TODO: implement nextDouble")
+            // adapt from here:
+            // https://github.com/TiarkRompf/legobase-micro/blob/master/minidb/src/main/scala/Scanner.scala#L49
+            val first = nextInt('.')
+            val second = nextInt(d)
+            first.asInstanceOf[Rep[Double]]
+          }
+
 
           def hasNext = pos < fl
 
@@ -77,6 +84,7 @@ class QueryLiveStepsTest3 extends TutorialFunSuite {
           def hash = data.HashCode(len)
         }
 
+        // not used at the moment
         case class RInt(value: Rep[Int]) extends RField {
           def print() = printf("%d", value)
 
@@ -87,54 +95,47 @@ class QueryLiveStepsTest3 extends TutorialFunSuite {
           def hash = value.asInstanceOf[Rep[Long]]
         }
 
-        // class Record(fields: Vector[Rep[String]], schema: Vector[String]) {
-        case class Record(fields: Vector[RField], schema: Vector[String]) {
-          def apply(name: String): RField = fields(schema indexOf name)
-
-          def apply(names: Schema): Vector[RField] = names map (this apply _)
-        }
-
-        def processCSV(file: Rep[String], schema: Vector[String])(yld: Record => Unit): Unit = {
-          val in = new Scanner(file)
-          in.next('\n')
-          while (in.hasNext) {
-            val fields = schema map (n => in.next(if (n == schema.last) '\n' else ','))
-            yld(Record(fields, schema))
+        case class Point(key: Rep[Int], x: Rep[Double], y: Rep[Double])
+        case class Rectangle(x: Rep[Double], y: Rep[Double], width: Rep[Double], height: Rep[Double]) {
+          def isEmpty() = width <= 0.0 || height <= 0.0
+          def contains(x: Rep[Double], y: Rep[Double]): Rep[Boolean] = {
+            if (isEmpty()) {
+              false
+            } else {
+              val x1 = this.x;
+              val y1 = this.y;
+              val x2 = x1 + this.width;
+              val y2 = y1 + this.height;
+              x1 <= x && x < x2 && y1 <= y && y < y2
+            }
           }
-        }
-
-        def evalRef(p: Ref)(rec: Record): RField = p match {
-          case Value(x) => RString(x.toString,x.toString.length)
-          case Field(name) => rec(name)
-        }
-
-        def evalPred(p: Predicate)(rec: Record): Rep[Boolean] = p match {
-          case Eq(a, b) => evalRef(a)(rec) == evalRef(b)(rec)
-        }
-
-        def execOp(op: Operator)(yld: Record => Unit): Unit = op match {
-          case Scan(file, schema, _, _) => processCSV(file, schema)(yld)
-          case PrintCSV(parent) => execOp(parent) { rec => printFields(rec.fields) }
-          case Project(outSchema, inSchema, parent) =>
-            execOp(parent) { rec => yld(Record(rec(inSchema), outSchema)) }
-          case Filter(pred, parent) =>
-            execOp(parent) { rec => if (evalPred(pred)(rec)) yld(rec) }
-        }
-
-        //      def printFields(fields: Vector[RField]) = printf(fields.map(_ => "%s").mkString("", ",", "\n"), fields: _*)
-        def printFields(fields: Vector[RField]) = {
-          if (fields.nonEmpty) {
-            fields.head.print
-            fields.tail.foreach { x  => printf(defaultFieldDelimiter.toString); x.print }
+          def contains(p: Point): Rep[Boolean] = contains(p.x, p.y)
+          def contains(r: Rectangle): Rep[Boolean] = { println("TODO: implement contains"); false }
+          def intersects(r: Rectangle): Rep[Boolean] = { println("TODO: implement intersects"); false }
+          /* TODO: translate from java, like above 
+          see here for Rectangle2D source code: https://android.googlesource.com/platform/frameworks/native/+/edbf3b6/awt/java/awt/geom/Rectangle2D.java
+          public boolean intersects(double x, double y, double width, double height) {
+              if (isEmpty() || width <= 0.0 || height <= 0.0) {
+                  return false;
+              }
+              double x1 = getX();
+              double y1 = getY();
+              double x2 = x1 + getWidth();
+              double y2 = y1 + getHeight();
+              return x + width > x1 && x < x2 && y + height > y1 && y < y2;
           }
-          println("")
+          public boolean contains(double x, double y, double width, double height) {
+              if (isEmpty() || width <= 0.0 || height <= 0.0) {
+                  return false;
+              }
+              double x1 = getX();
+              double y1 = getY();
+              double x2 = x1 + getWidth();
+              double y2 = y1 + getHeight();
+              return x1 <= x && x + width <= x2 && y1 <= y && y + height <= y2;
+          }
+          */
         }
-
-
-        import java.awt.geom.Rectangle2D
-        import java.awt.geom.Point2D
-
-        case class Point(id: Rep[Int], x: Rep[Double], y: Rep[Double])
 
         trait GridAttributes{
           val spaceSide = 22361
@@ -142,147 +143,124 @@ class QueryLiveStepsTest3 extends TutorialFunSuite {
           val numCells = (numAgents / 296).toInt
           val cellsPerSide = (math.sqrt(numCells)).toInt
           val cellSize = (spaceSide / cellsPerSide).toInt
-          val globalSize = cellsPerSide * cellsPerSide
+          val maxPoints = (1 << 20)
+          val gridSize1D = cellsPerSide * cellsPerSide
         }
 
         class Grid extends GridAttributes {
+          val keys:  Rep[Array[Int]]    = NewArray[Int](maxPoints)
+          val xs:    Rep[Array[Double]] = NewArray[Double](maxPoints)
+          val ys:    Rep[Array[Double]] = NewArray[Double](maxPoints)
+          val nexts: Rep[Array[Int]]    = NewArray[Int](maxPoints)
+          var numPoints = 0
 
-          val ids:   Rep[Array[Int]]    = NewArray[Int](globalSize)
-          val xs:    Rep[Array[Double]] = NewArray[Double](globalSize)
-          val ys:    Rep[Array[Double]] = NewArray[Double](globalSize)
-          val nexts: Rep[Array[Int]]    = NewArray[Int](globalSize)
+          val grid:  Rep[Array[Int]]    = NewArray[Int](gridSize1D)
+          for (i <- 0 until gridSize1D)
+            grid(i) = -1
 
-          val grid:  Rep[Array[Int]]    = NewArray[Int](globalSize)
-
-          case class PointList(head: Point, next: Int) {
-            def tail: Option[PointList] = getPointList(next)
-          }
-
-          def getPoint(n: Int) = Point(ids(n), xs(n), ys(n))
-          def getPointList(n: Int) = if (n < 0) None else Some(PointList(getPoint(n), nexts(n)))
-
-          def accessGrid(x: Int, y: Int): Option[PointList] = getPointList(grid(y * cellsPerSide + x))
-          def updateGrid(x: Int, y: Int)(p: Point) = {
-            val n = y * cellsPerSide + x
-            val pl = accessGrid(x,y)
-            pl match {
-              case None =>
-                nexts(n) = -1
-              case Some(tail) =>
-                nexts(n) = -1
-            }
-            ids(n) = p.id
-            xs(n) = p.x
-            ys(n) = p.y
-          }
-
-
-          def addPoint(p: Point): Array[Array[List[A]]] = {
-            val g = Array.fill(cellsPerSide, cellsPerSide)(Nil: List[A])
-
-              val xbin = (p.x / cellSize).toInt
-              val ybin = (p.y / cellSize).toInt
-              updateGrid(xbin,ybin)(p)
-          }
-
-          def printGrid(): Unit = {
-            for (i <- 0 to cellsPerSide - 1) {
-              print(i, " ")
-              for (j <- 0 to cellsPerSide - 1)
-                print(grid(i)(j), " ")
-              println()
+          def getPoint(n: Rep[Int]) = Point(keys(n), xs(n), ys(n))
+          def getPointList(n0: Rep[Int]) = new {
+            def foreach(f: Point => Rep[Unit]) = {
+              var n = n0
+              while (n >= 0) {
+                f(getPoint(n))
+                n = nexts(n)
+              }
             }
           }
 
-          def nestedIndexWindowJoin(t1: List[Point], xDel: Double, yDel: Double): List[Point] = {
-            var result = List[Point]()
-            for (i <- 0 to t1.length - 1) {
-              val window = new Rectangle2D.Double(t1(i).x - xDel, t1(i).y - yDel, 2 * xDel, 2 * yDel )
-              //     println(t1(i).x, t1(i).y, window)
+          def accessGrid(x: Rep[Int],y: Rep[Int]) = {
+            val gridPos = y * cellsPerSide + x
+            getPointList(grid(gridPos))
+          }
 
-              for (a <- 0 to cellsPerSide - 1){
-                for (b <- 0 to cellsPerSide - 1){
-                  val gridcell = new Rectangle2D.Double(cellSize * a, cellSize * b, cellSize, cellSize)
-                  if (window.contains(gridcell)){
-                    //           println("contains", a, b)
-                    //report all points
-                    result :::= grid(a)(b)
-                  }
-                  else if(window.intersects(gridcell)){
-                    //           println("intersects", a, b)
-                    for(c <- grid(a)(b))
-                      if(window.contains(new Point2D.Double(c.x,c.y))) {
-                        result ::= c
-                        //               println(t1(i).x, t1(i).y, c)
-                        //               println(result)
-                      }
+          def addPoint(p: Point) = {
+            if (numPoints >= maxPoints) println("ERROR: maxPoints exceeded")
+            val xbin = (p.x / cellSize).toInt
+            val ybin = (p.y / cellSize).toInt
+            val gridPos = ybin * cellsPerSide + xbin
+            val next = grid(gridPos)
+            grid(gridPos) = numPoints
+            keys(numPoints) = p.key
+            xs(numPoints) = p.x
+            ys(numPoints) = p.y
+            nexts(numPoints) = next
+            numPoints += 1
+          }
 
-                  }
+          // note: signature changed to join/lookup only 1 point (called in a loop from method snippet)
+          def nestedIndexWindowJoin(p1: Point, xDel: Double, yDel: Double)(f: Point => Rep[Unit]) = {
+            val window = Rectangle(p1.x - xDel, p1.y - yDel, 2 * xDel, 2 * yDel)
+            //     println(t1(i).x, t1(i).y, window)
+
+            // TODO: be smarter about iteration space
+            for (a <- 0 until cellsPerSide){
+              for (b <- 0 until cellsPerSide){
+                val gridcell = Rectangle(cellSize * a, cellSize * b, cellSize, cellSize)
+                if (window.contains(gridcell)){
+                  //           println("contains", a, b)
+                  //report all points
+                  accessGrid(a,b).foreach(f)
+                }
+                else if(window.intersects(gridcell)){
+                  //           println("intersects", a, b)
+                  for(c <- accessGrid(a,b))
+                    if(window.contains(c)) {
+                      f(c)
+                      //               println(t1(i).x, t1(i).y, c)
+                      //               println(result)
+                    }
+
                 }
               }
             }
-            result
           }
         }
 
-        object driver{
-          def processCSV(filename: String): List[Point] = {
-            var result = List[Point]()
-            val in = new Scanner(filename)
-            while (in.hasNext) {
-              val id   = in.next(',').toInt
-              val x   = in.next(',').toDouble
-              val y  = in.next('\n').toDouble
-              result ::= Point(id,x,y)
-            }
-            in.close
-
-            result
+        def processCSV(filename: String)(f: Point => Rep[Unit]) = {
+          val in = new Scanner(filename)
+          while (in.hasNext) {
+            val id   = in.nextInt(',')
+            val x   = in.nextDouble(',')
+            val y  = in.nextDouble('\n')
+            f(Point(id,x,y))
           }
-
-          def main(args: Array[String]): Unit = {
-            val t1 = processCSV("src/data/test10_t1.csv")
-            val t2 = processCSV("src/data/test10_t2.csv")
-            val x = new Grid(t2)
-            val r = x.nestedIndexWindowJoin(t1,11.26, 11.26)
-            println(r)
-          }
+          in.done
         }
 
-
-
-
+        // main function - code generated from everything inside gets compiled
+        def snippet(x: Rep[String]): Rep[Unit] = {
+          val grid2 = new Grid()
+          processCSV("src/data/test10_t2.csv") { p2 => 
+            grid2.addPoint(p2) }
+          processCSV("src/data/test10_t1.csv") { p1 =>
+            grid2.nestedIndexWindowJoin(p1,11.26, 11.26) { p3 => 
+              printf("id: %d, x: %f, y: %f",p3.key,p3.x,p3.y) }}
+        }
       }
 
       def run = {
-        val snippet = new LMS_Driver[String,Unit] with QueryCompiler {
-
-          def snippet(x: Rep[String]): Rep[Unit] = {
-            val ops = parseSql("select time,room,title from src/data/talks.csv where time = '09:00 AM'")
-            execOp(PrintCSV(ops)) { _ => }
-          }
-        }
-
+        val snippet = new LMS_Driver[String,Unit] with QueryCompiler
         println(snippet.code)
         println("--- now running: ---")
         //   snippet.precompile
         utils.time {
-          snippet.eval("")
+          snippet.eval("empty")
         }
 
       }
 
     }
 
-    exec("data", utils.captureOut(Engine.run), suffix="csv")
+    exec("out", utils.captureOut(Engine.run), suffix="txt")
   }
 
 
-  trait SimpleQueryProcessor extends PlainQueryProcessor with SQLParser {
+  /*trait SimpleQueryProcessor extends PlainQueryProcessor with SQLParser {
     def dynamicFilePath(table: String): Table = table
     def execQuery(q: Operator): Unit = ???
     def version: String = "simple"
-  }
+  }*/
 
 
   abstract class LMS_Driver[A:Manifest,B:Manifest] extends DslDriverC[A,B] with  ScannerLowerExp{ q =>
@@ -291,23 +269,4 @@ class QueryLiveStepsTest3 extends TutorialFunSuite {
     }
   }
 
-  /*abstract class LMS_Driver[A:Typ,B:Typ] extends DslDriver[A,B] with ScannerExp
-    with StagedEngine with MainEngine with query_staged.QueryCompiler { q =>
-      override val codegen = new DslGen with ScalaGenScanner {
-        val IR: q.type = q
-      }
-  }*/
-
-
 }
-
-//def c_engine =
-//new DslDriverC[String,Unit] with ScannerLowerExp
-//with StagedEngine with MainEngine with query_optc.QueryCompiler { q =>
-//  override val codegen = new DslGenC with CGenScannerLower {
-//  val IR: q.type = q
-//}
-//  override def snippet(fn: Table): Rep[Unit] = run
-//  override def prepare: Unit = {}
-//  override def eval: Unit = eval(filename)
-//}
