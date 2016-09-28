@@ -6,10 +6,8 @@ import _root_.java.awt.geom.Rectangle2D
 import scala.lms.common._
 
 
-
 class GridTest2 extends TutorialFunSuite {
   val under = "grid_test_"
-
 
   test("grid1") {
 
@@ -43,12 +41,27 @@ class GridTest2 extends TutorialFunSuite {
           }
 
           def nextDouble(d: Rep[Char]) = {
-            println("TODO: implement nextDouble")
+
+            //println("TODO: implement nextDouble")
             // adapt from here:
             // https://github.com/TiarkRompf/legobase-micro/blob/master/minidb/src/main/scala/Scanner.scala#L49
+            val start = pos: Rep[Double] // force read
             val first = nextInt('.')
             val second = nextInt(d)
+            var invariant =  second
+            var numDigits = 0
+
             first.asInstanceOf[Rep[Double]]
+            second.asInstanceOf[Rep[Double]]
+
+            while (invariant != 0 ){
+              numDigits = numDigits + 1
+              invariant = invariant /10
+            }
+
+            val res = if (numDigits > 0) first.doubleValue + second.doubleValue /(numDigits * 10) else first.doubleValue
+
+            res: Rep[Double]
           }
 
 
@@ -102,16 +115,37 @@ class GridTest2 extends TutorialFunSuite {
             if (isEmpty()) {
               false
             } else {
-              val x1 = this.x;
-              val y1 = this.y;
-              val x2 = x1 + this.width;
-              val y2 = y1 + this.height;
+              val x1 = this.x
+              val y1 = this.y
+              val x2 = x1 + this.width
+              val y2 = y1 + this.height
               x1 <= x && x < x2 && y1 <= y && y < y2
             }
           }
           def contains(p: Point): Rep[Boolean] = contains(p.x, p.y)
-          def contains(r: Rectangle): Rep[Boolean] = { println("TODO: implement contains"); false }
-          def intersects(r: Rectangle): Rep[Boolean] = { println("TODO: implement intersects"); false }
+          def contains(r: Rectangle): Rep[Boolean] = {
+            if (isEmpty() || r.width <= 0.0 || r.height <= 0.0) {
+               false
+            } else {
+              val x1 = this.x
+              val y1 = this.y
+              val x2 = x1 + this.width
+              val y2 = y1 + this.height
+              x1 <= x && x + r.width <= x2 && y1 <= y && y + r.height <= y2
+            }
+          }
+
+          def intersects(r: Rectangle): Rep[Boolean] = {
+            if (isEmpty() || r.width <= 0.0 || r.height <= 0.0) {
+              false
+            } else {
+              val x1 = this.x
+              val y1 = this.y
+              val x2 = x1 + this.width
+              val y2 = y1 + this.height
+              x + r.width > x1 && x < x2 && y + r.height > y1 && y < y2
+            }
+          }
           /* TODO: translate from java, like above 
           see here for Rectangle2D source code: https://android.googlesource.com/platform/frameworks/native/+/edbf3b6/awt/java/awt/geom/Rectangle2D.java
           public boolean intersects(double x, double y, double width, double height) {
@@ -190,31 +224,72 @@ class GridTest2 extends TutorialFunSuite {
 
           // note: signature changed to join/lookup only 1 point (called in a loop from method snippet)
           def nestedIndexWindowJoin(p1: Point, xDel: Double, yDel: Double)(f: Point => Rep[Unit]) = {
+
             val window = Rectangle(p1.x - xDel, p1.y - yDel, 2 * xDel, 2 * yDel)
-            //     println(t1(i).x, t1(i).y, window)
 
             // TODO: be smarter about iteration space
             for (a <- 0 until cellsPerSide){
               for (b <- 0 until cellsPerSide){
+
                 val gridcell = Rectangle(cellSize * a, cellSize * b, cellSize, cellSize)
+
                 if (window.contains(gridcell)){
-                  //           println("contains", a, b)
                   //report all points
                   accessGrid(a,b).foreach(f)
                 }
                 else if(window.intersects(gridcell)){
-                  //           println("intersects", a, b)
                   for(c <- accessGrid(a,b))
                     if(window.contains(c)) {
                       f(c)
-                      //               println(t1(i).x, t1(i).y, c)
-                      //               println(result)
                     }
-
                 }
               }
             }
           }
+
+          def nestedIndexWindowJoin_efficient(p1: Point, xDel: Double, yDel: Double)(f: Point => Rep[Unit]) = {
+
+            val window = Rectangle(p1.x - xDel, p1.y - yDel, 2 * xDel, 2 * yDel)
+
+            //lower left corner
+            val x1 = ((p1.x - xDel)/cellSize).toInt
+            val y1 = ((p1.y - yDel)/cellSize).toInt
+
+            //upper right corner
+            val x2 = ((p1.x + xDel)/cellSize).toInt
+            val y2 = ((p1.y + yDel)/cellSize).toInt
+
+            //iterate over the cells that overlap window
+            val const1 = x2-x1
+            val const2 = y2-y1
+
+            var a =  x2
+            while(a > const1)
+            {
+              var b = y1
+              while (b > const2){
+
+                val gridcell = Rectangle(cellSize * a, cellSize * b, cellSize, cellSize)
+
+                if (window.contains(gridcell)){
+                  //report all points
+                  accessGrid(a,b).foreach(f)
+                } else if(window.intersects(gridcell)){
+                  for(c <- accessGrid(a,b))
+                    if(window.contains(c)) {
+                      f(c)
+                    }
+                }
+
+                b = b + 1
+              }
+              a = a + 1
+            }
+          }
+
+
+
+
         }
 
         def processCSV(filename: String)(f: Point => Rep[Unit]) = {
@@ -223,6 +298,7 @@ class GridTest2 extends TutorialFunSuite {
             val id   = in.nextInt(',')
             val x   = in.nextDouble(',')
             val y  = in.nextDouble('\n')
+
             f(Point(id,x,y))
           }
           in.done
@@ -231,11 +307,19 @@ class GridTest2 extends TutorialFunSuite {
         // main function - code generated from everything inside gets compiled
         def snippet(x: Rep[String]): Rep[Unit] = {
           val grid2 = new Grid()
-          processCSV("src/data/test10_t2.csv") { p2 => 
-            grid2.addPoint(p2) }
-          processCSV("src/data/test10_t1.csv") { p1 =>
-            grid2.nestedIndexWindowJoin(p1,11.26, 11.26) { p3 => 
-              printf("id: %d, x: %f, y: %f",p3.key,p3.x,p3.y) }}
+          processCSV("/Users/postgresuser/Research/tutorials/src/data/exp2_T2_1000.csv") { p2 =>
+            grid2.addPoint(p2)
+          }
+          val start = System.nanoTime
+
+          processCSV("/Users/postgresuser/Research/tutorials/src/data/exp2_T1_10_v2.csv") { p1 =>
+            grid2.nestedIndexWindowJoin(p1,11.26, 11.26)
+            { p3 =>
+              printf("id: %d, x: %f, y: %f",p3.key,p3.x,p3.y)
+            }
+          }
+          val end = System.nanoTime
+          println(end-start)
         }
       }
 
@@ -254,13 +338,6 @@ class GridTest2 extends TutorialFunSuite {
 
     exec("out", utils.captureOut(Engine.run), suffix="txt")
   }
-
-
-  /*trait SimpleQueryProcessor extends PlainQueryProcessor with SQLParser {
-    def dynamicFilePath(table: String): Table = table
-    def execQuery(q: Operator): Unit = ???
-    def version: String = "simple"
-  }*/
 
 
   abstract class LMS_Driver[A:Manifest,B:Manifest] extends DslDriverC[A,B] with  ScannerLowerExp{ q =>
