@@ -4,6 +4,12 @@ import _root_.java.awt.geom.Point2D
 import _root_.java.awt.geom.Rectangle2D
 
 import scala.lms.common._
+import scala.virtualization.lms.common
+import scala.virtualization.lms.internal._
+import scala.virtualization.lms.util._
+import java.io.{PrintWriter,StringWriter,FileOutputStream}
+import scala.collection.mutable.HashMap
+import scala.collection.mutable.ListBuffer
 
 class STR_TreeTest extends TutorialFunSuite {
   val under = "str_tree_test_"
@@ -38,30 +44,6 @@ class STR_TreeTest extends TutorialFunSuite {
             pos += 1
             num: Rep[Int] //RInt(num)
           }
-
-//          def nextDouble(d: Rep[Char]) = {
-//
-//            //println("TODO: implement nextDouble")
-//            // adapt from here:
-//            // https://github.com/TiarkRompf/legobase-micro/blob/master/minidb/src/main/scala/Scanner.scala#L49
-//            val start = pos: Rep[Double] // force read
-//            val first = nextInt('.')
-//            val second = nextInt(d)
-//            var invariant =  second
-//            var denom = 1
-//            //var denom = if (second > 0 ) 1 else 0
-//
-//            first.asInstanceOf[Rep[Double]]
-//            second.asInstanceOf[Rep[Double]]
-//
-////            while (invariant != 0 ){
-////              invariant = invariant /10
-////              denom = denom * 10
-////            }
-//            //val res = if (denom > 0) first.doubleValue + second.doubleValue /denom else first.doubleValue
-//            val res = first.doubleValue
-//            res: Rep[Double]
-//          }
 
           def nextDouble(d: Rep[Char] = '|'): Rep[Double] = {
             val start = pos: Rep[Double] // force read
@@ -128,79 +110,49 @@ class STR_TreeTest extends TutorialFunSuite {
           def hash = value.asInstanceOf[Rep[Long]]
         }
 
-        case class Point(key: Rep[Int], x: Rep[Double], y: Rep[Double])
-        case class Rectangle(x: Rep[Double], y: Rep[Double], width: Rep[Double], height: Rep[Double]) {
-          def isEmpty() = width <= 0.0 || height <= 0.0
-          def contains(x: Rep[Double], y: Rep[Double]): Rep[Boolean] = {
-            if (isEmpty()) {
-              false
-            } else {
-              val x1 = this.x
-              val y1 = this.y
-              val x2 = x1 + this.width
-              val y2 = y1 + this.height
-              x1 <= x && x < x2 && y1 <= y && y < y2
-            }
-          }
-          def contains(p: Point): Rep[Boolean] = contains(p.x, p.y)
-          def contains(r: Rectangle): Rep[Boolean] = {
-            if (isEmpty() || r.width <= 0.0 || r.height <= 0.0) {
-              false
-            } else {
-              val x1 = this.x
-              val y1 = this.y
-              val x2 = x1 + this.width
-              val y2 = y1 + this.height
-              x1 <= r.x && r.x + r.width <= x2 && y1 <= r.y && r.y + r.height <= y2
-            }
-          }
-
-          def intersects(r: Rectangle): Rep[Boolean] = {
-            if (isEmpty() || r.width <= 0.0 || r.height <= 0.0) {
-              false
-            } else {
-              val x1 = this.x
-              val y1 = this.y
-              val x2 = x1 + this.width
-              val y2 = y1 + this.height
-              r.x + r.width > x1 && r.x < x2 && r.y + r.height > y1 && r.y < y2
-            }
-          }
-          /* TODO: translate from java, like above
-          see here for Rectangle2D source code: https://android.googlesource.com/platform/frameworks/native/+/edbf3b6/awt/java/awt/geom/Rectangle2D.java
-          public boolean intersects(double x, double y, double width, double height) {
-              if (isEmpty() || width <= 0.0 || height <= 0.0) {
-                  return false;
-              }
-              double x1 = getX();
-              double y1 = getY();
-              double x2 = x1 + getWidth();
-              double y2 = y1 + getHeight();
-              return x + width > x1 && x < x2 && y + height > y1 && y < y2;
-          }
-          public boolean contains(double x, double y, double width, double height) {
-              if (isEmpty() || width <= 0.0 || height <= 0.0) {
-                  return false;
-              }
-              double x1 = getX();
-              double y1 = getY();
-              double x2 = x1 + getWidth();
-              double y2 = y1 + getHeight();
-              return x1 <= x && x + width <= x2 && y1 <= y && y + height <= y2;
-          }
-          */
-        }
+        case class Point(key: Rep[Int], x: Rep[Int], y: Rep[Int])
 
         trait STR_TreeAttributes{
           val fillFactor = 1
           val maxEntries = 12
           val numInLeaf = fillFactor * maxEntries
+
+
+          def array_quicksort[T:Manifest](xs: Rep[Array[T]], size: Rep[Long], comp: Function2[Rep[T],Rep[T],Rep[Int]]): Rep[Unit] = {
+            val f = uninlinedFunc2((a:Rep[MyPointer[T]], b:Rep[MyPointer[T]]) => comp(deref(a), deref(b)))
+            if (manifest[T] == manifest[Int])
+              cg"qsort($xs,$size,sizeof(int),(__compar_fn_t)$f)".as[Unit]
+            else if (manifest[T] == manifest[Long])
+              cg"qsort($xs,$size,sizeof(long),(__compar_fn_t)$f)".as[Unit]
+            else if (manifest[T] == manifest[Double])
+              cg"qsort($xs,$size,sizeof(double),(__compar_fn_t)$f)".as[Unit]
+            else if (manifest[T] == manifest[Char])
+              cg"qsort($xs,$size,sizeof(char),(__compar_fn_t)$f)".as[Unit]
+            else if (manifest[T] == manifest[String])
+              cg"qsort($xs,$size,sizeof(char*),(__compar_fn_t)$f)".as[Unit]
+            else if (manifest[T] <:< manifest[Record]) {
+              val name = structName(manifest[T])
+              rq(new StringContext("qsort((void *)", ",", s",sizeof(struct $name), (__compar_fn_t)", ")")).cg(xs, size, f).as[Unit]
+            } else {
+              cg"qsort((void *)$xs,$size,sizeof(void*),(__compar_fn_t)$f)".as[Unit]
+            }
+          }
+        }
+
+        case class Rectangle(low0: Rep[Double], high0: Rep[Double], low1: Rep[Double], high1: Rep[Double]) {
+          def intersects(otherLow0: Double, otherHigh0: Double, otherLow1: Double, otherHigh1:Double): Rep[Boolean] = {
+
+            ((low0 <= otherHigh0)
+              && (high0 >= otherLow0)
+              && (low1 <= otherHigh1)
+              && (high1 >= otherLow1))
+          }
         }
 
         class STR_Tree(val size: Int) extends STR_TreeAttributes{
           val keys:  Rep[Array[Int]]    = NewArray[Int](size)
-          val xs:    Rep[Array[Double]] = NewArray[Double](size)
-          val ys:    Rep[Array[Double]] = NewArray[Double](size)
+          val xs:    Rep[Array[Int]] = NewArray[Int](size)
+          val ys:    Rep[Array[Int]] = NewArray[Int](size)
 
           var numPoints = 0
 
@@ -233,39 +185,31 @@ class STR_TreeTest extends TutorialFunSuite {
           var stack: Rep[Array[Int]]    = NewArray[Int](stack_size)
           var stack_ptr = 0
 
-          //println(startLevel(numOfLevels-1))
 
-
-          var min0:    Rep[Array[Double]] = NewArray[Double](inode_size)
-          var max0:    Rep[Array[Double]] = NewArray[Double](inode_size)
-          var min1:    Rep[Array[Double]] = NewArray[Double](inode_size)
-          var max1:    Rep[Array[Double]] = NewArray[Double](inode_size)
+          var min0:    Rep[Array[Int]] = NewArray[Int](inode_size)
+          var max0:    Rep[Array[Int]] = NewArray[Int](inode_size)
+          var min1:    Rep[Array[Int]] = NewArray[Int](inode_size)
+          var max1:    Rep[Array[Int]] = NewArray[Int](inode_size)
 
           def addPoint(p: Point) = {
             keys(numPoints) = p.key
             xs(numPoints) = p.x
             ys(numPoints) = p.y
 
-//            println(xs(numPoints))
-//            println(ys(numPoints))
-//            println("-----")
             numPoints += 1
           }
 
           def buildIndex()={
 
-            //the leaf-level case
-            //var currentLevel = numOfLevels - 1
-            //var currentSartIndex = inode_size - power(currentLevel)
 
             var currentSartIndex = startLevel(numOfLevels-1)
 
             var k = 0 //the starting index of xs and ys
             while(k<size-numInLeaf){
-              var min0Val = xs(k): Rep[Double]
-              var max0Val = xs(k): Rep[Double]
-              var min1Val = ys(k): Rep[Double]
-              var max1Val = ys(k): Rep[Double]
+              var min0Val = xs(k): Rep[Int]
+              var max0Val = xs(k): Rep[Int]
+              var min1Val = ys(k): Rep[Int]
+              var max1Val = ys(k): Rep[Int]
 
               for(i <- 1 + k until numInLeaf+k){
                 if(xs(i) < min0Val)
@@ -285,10 +229,6 @@ class STR_TreeTest extends TutorialFunSuite {
 
               nexts(currentSartIndex) = k
               counts(currentSartIndex) = numInLeaf
-//              println(currentSartIndex)
-//              println("---")
-//              println(k)
-
 
               currentSartIndex = currentSartIndex + 1
 
@@ -301,10 +241,10 @@ class STR_TreeTest extends TutorialFunSuite {
               //last leaf is incomplete
               val remaining = size-k
 
-              var min0Val = xs(k): Rep[Double]
-              var max0Val = xs(k): Rep[Double]
-              var min1Val = ys(k): Rep[Double]
-              var max1Val = ys(k): Rep[Double]
+              var min0Val = xs(k): Rep[Int]
+              var max0Val = xs(k): Rep[Int]
+              var min1Val = ys(k): Rep[Int]
+              var max1Val = ys(k): Rep[Int]
 
               for(i<- 1 + k until remaining +k){
                 if(xs(i) < min0Val)
@@ -343,10 +283,10 @@ class STR_TreeTest extends TutorialFunSuite {
 
               while(k < levelActualEnd(j) - numInLeaf){
 
-                var min0Val = min0(k): Rep[Double]
-                var max0Val = max0(k): Rep[Double]
-                var min1Val = min1(k): Rep[Double]
-                var max1Val = max1(k): Rep[Double]
+                var min0Val = min0(k): Rep[Int]
+                var max0Val = max0(k): Rep[Int]
+                var min1Val = min1(k): Rep[Int]
+                var max1Val = max1(k): Rep[Int]
 
                 for(i <- 1 + k until numInLeaf+k){
                   if(min0(i) < min0Val)
@@ -378,10 +318,10 @@ class STR_TreeTest extends TutorialFunSuite {
               val remaining = levelActualEnd(j) - k
               //println(remaining)
 
-              var min0Val = min0(k): Rep[Double]
-              var max0Val = max0(k): Rep[Double]
-              var min1Val = min1(k): Rep[Double]
-              var max1Val = max1(k): Rep[Double]
+              var min0Val = min0(k): Rep[Int]
+              var max0Val = max0(k): Rep[Int]
+              var min1Val = min1(k): Rep[Int]
+              var max1Val = max1(k): Rep[Int]
 
               for(i<- 1 + k until remaining +k){
 
@@ -414,22 +354,104 @@ class STR_TreeTest extends TutorialFunSuite {
 
               j = j-1
             }
-//sbt -J-Xmx3G -J-Xms1G -J-XX:MaxPermSize=1G
-//            println(min0(0))
-//            println(max0(0))
-//            println(min1(0))
-//            println(max1(0))
-//
-//            for(i<- 0 until nexts_size) {
-//              print(i)
-//              print("---")
-//              println(counts(i))
-//            }
 
           }
 
+          def intersects(low0: Rep[Int], high0: Rep[Int], low1: Rep[Int], high1:Rep[Int],
+                         otherLow0: Rep[Int], otherHigh0: Rep[Int], otherLow1: Rep[Int], otherHigh1:Rep[Int]): Rep[Boolean] = {
+
+            ((low0 <= otherHigh0) && (high0 >= otherLow0) && (low1 <= otherHigh1) && (high1 >= otherLow1))
+          }
+
+          def containsPoint(low0: Rep[Int], high0: Rep[Int], low1: Rep[Int], high1:Rep[Int], x: Rep[Int], y: Rep[Int]) :Rep[Boolean]={
+             ((low0 <= x) && (high0 >= x) && (low1 <= y) && (high1 >=y))
+          }
+
+
+          def nestedIndexWindowJoin(p1: Point, xDel: Int, yDel: Int)(f: Point => Rep[Unit]) = {
+            //reset stack
+            stack_ptr = 0
+
+            var k = counts(0) - 1
+
+            for (a <-0 until k) {
+              stack(stack_ptr) = a
+              stack_ptr = stack_ptr + 1
+
+              var x1 = (p1.x - xDel) : Rep[Int]
+              var y1 = (p1.y - yDel) : Rep[Int]
+              var x2 = (p1.x + xDel) : Rep[Int]
+              var y2 = (p1.y + yDel) : Rep[Int]
+
+              while (stack_ptr != 0) {
+                var top = stack(stack_ptr - 1): Rep[Int]
+                stack_ptr = stack_ptr - 1
+
+                if (intersects(min0(top), max0(top), min1(top), max1(top), x1, x2, y1, y2)) {
+
+                  //update intersection area
+                  var low0 = min0(top): Rep[Int]
+                  var low1 = max0(top): Rep[Int]
+                  var high0 = min1(top): Rep[Int]
+                  var high1 = max1(top): Rep[Int]
+
+
+                  if (min0(top) < x1) {
+                      low0 = x1;
+                  } else {
+                      low0 = min0(top);
+                  }
+
+                  if (max0(top) < x2) {
+                      high0 = max0(top);
+                  } else {
+                      high0 = x2;
+                  }
+
+                  if (min1(top) < y1) {
+                      low1 = y1;
+                  } else {
+                      low1 = min1(top);
+                  }
+
+                  if (max1(top) < y2) {
+                      high1 = max1(top);
+                  } else {
+                      high1 = y2;
+                  }
+
+                  x1 = low0
+                  x2 = high0
+                  y1 = low1
+                  y2 = high1
+                  var n = nexts(top)
+                  if (n == 0) {}
+                  else if (n < startLevel(numOfLevels-1)) {
+                    var j = n + counts(n) - 1
+                    while (j >= n) {
+                      if (stack_ptr < stack_size) {
+                        stack(stack_ptr) = j
+                        stack_ptr = stack_ptr + 1
+                      }
+                      j = j - 1
+                     }
+                    }
+                   else {
+                      var leafStart = nexts(n)
+                      for (i <- 0 until counts(n) * numInLeaf  ) {
+                        if (containsPoint(x1, x2, y1, y2, xs(leafStart + i), ys(leafStart + i))) {
+                          f(Point(keys(leafStart + i), xs(leafStart + i),ys(leafStart + i)))
+                        }
+                      }
+                  }
+                }
+              } //end while
+            }//end for
+          }
+
+
           def printIndex(key_id: Rep[Int]) : Rep[Unit] = {
-            //push the root in the stack
+            //push the root into the stack
             var k = counts(key_id) - 1
             while (k>=0){
               stack(stack_ptr) = k
@@ -437,33 +459,44 @@ class STR_TreeTest extends TutorialFunSuite {
               k = k - 1
             }
 
-//            for (i<-0 until nexts_size)
-//              println(counts(i))
-
-            while(stack_ptr != 0){
+            while(stack_ptr != 0 ){
               var top = stack(stack_ptr-1)
               stack_ptr = stack_ptr - 1
-              println(top)
+              print(top)
               var n = nexts(top)
-              if (n < 155 ){
-                if(counts(n) <= 12)
-                  
-                for (i<- 0 until counts(n)){
+              print("----")
+              println(n)
+              if(n == 0){}
 
+              else if (n < startLevel(numOfLevels-1)){
+
+                var j = n + counts(n) -1
+                while(j>=n){
                   if(stack_ptr < stack_size) {
-                    stack(stack_ptr) = n + i
+                    stack(stack_ptr) = j
                     stack_ptr = stack_ptr + 1
                   }
+                  j = j-1
                 }
 
-                else
-                  println("count too large")
-
               }
-              else
-                println("leaf")
-            }
+              else {
+                print("leaf ")
+                println(n)
+                var leafStart = nexts(n)
+                println(leafStart)
+                for(i<-0 until counts(n) * numInLeaf){
+                  print(keys(leafStart+i))
+                  print(" ")
+                  print(xs(leafStart+i))
+                  print(" ")
+                  println(ys(leafStart+i))
 
+                  if (i%numInLeaf == 0)
+                    println(" ")
+                }
+              }
+            }
           }
 
           def printStack(): Rep[Unit]={
@@ -471,18 +504,13 @@ class STR_TreeTest extends TutorialFunSuite {
               println(stack(i))
           }
 
-
           def power(v: Rep[Int]): Rep[Int]={
             var out = 1: Rep[Int]
             for(i <- 0 until v)
               out = out * numInLeaf
-
             out
-
           }
-
         }
-
 
         def processCSV(filename: String)(f: Point => Rep[Unit]) = {
           val in = new Scanner(filename)
@@ -503,18 +531,16 @@ class STR_TreeTest extends TutorialFunSuite {
             strTree.addPoint(p2)
           }
           strTree.buildIndex
-          strTree.printIndex(0)
-          //strTree.printStack
           println("end building")
-//          println("start query")
-//          processCSV("/Users/postgresuser/Research/tutorials/src/data/t1_10000.csv") { p1 =>
-//            grid2.nestedIndexWindowJoin_efficient(p1,11.26, 11.26)
-//            { p3 =>
-//              //println(p3.key)
-//              //printf("id: %d, x: %f, y: %f",p3.key,p3.x,p3.y)
-//            }
-//          }
-//          println("end query")
+          println("start query")
+          processCSV("/Users/postgresuser/Research/tutorials/src/data/t1_10000_int_correct.csv") { p1 =>
+            strTree.nestedIndexWindowJoin(p1,11, 11)
+            { p3 =>
+              println(p3.key)
+              //println(p3.key)
+            }
+          }
+          println("end query")
         }
       }
 
@@ -531,10 +557,10 @@ class STR_TreeTest extends TutorialFunSuite {
     exec("out", utils.captureOut(Engine.run), suffix="txt")
   }
 
-
   abstract class LMS_Driver[A:Manifest,B:Manifest] extends DslDriverC[A,B] with  ScannerLowerExp{ q =>
     override val codegen = new DslGenC with CGenScannerLower {
       val IR: q.type = q
     }
   }
 }
+//sbt -J-Xmx3G -J-Xms1G -J-XX:MaxPermSize=1G
